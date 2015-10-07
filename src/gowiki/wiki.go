@@ -2,10 +2,13 @@ package main
 
 import (
     "html/template"
-    "fmt"
     "io/ioutil"
     "net/http"
+    "regexp"
 )
+
+var templates = template.Must(template.ParseFiles("edit.html", "view.html"))
+var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
 type Page struct {
     Title string
@@ -29,8 +32,7 @@ func loadPage(title string) (*Page, error) {
     return &Page{Title: title, Body: body}, nil
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/view/"):]
+func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
     p, err := loadPage(title)
 
     if err != nil {
@@ -42,43 +44,62 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func editHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/edit/"):]
+func editHandler(w http.ResponseWriter, r *http.Request, title string) {
     p, err := loadPage(title)
-
     if err != nil {
         p = &Page{Title: title}
     }
     renderTemplate(w, "edit", p)
 }
 
-func saveHandler(w http.ResponseWriter, r *http.Request) {
-    title := r.URL.Path[len("/save/"):]
+func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
     body := r.FormValue("body")
     p := &Page{Title: title, Body: []byte(body)}
-    p.save()
+    err := p.save()
+    
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
     http.Redirect(w, r, "/view/"+title, http.StatusFound)
 }
 
-func renderTemplate(w http.ResponseWriter,tmpl string, p *Page) {
-    t, _ := template.ParseFiles(tmpl + ".html")
-    t.Execute(w, p)
+func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
+    err := templates.ExecuteTemplate(w, tmpl + ".html", p)
+
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+}
+
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+    return func (w http.ResponseWriter, r *http.Request) {
+        m := validPath.FindStringSubmatch(r.URL.Path)
+
+        if m == nil {
+            http.NotFound(w, r)
+            return
+        }
+
+        fn(w, r, m[2])
+    }
+
 }
 
 func main() {
-    // test to create and write to file then read from it
+    // test to create and write to file
     p1 := &Page{Title: "TestPage", Body: []byte("This is sample data for the wiki page.")}
     p1.save()
-    p2, _ := loadPage("TestPage")
-    fmt.Println(string(p2.Body))
     
     // test to write code to localhost:8080
     // serve the code by typing:
     // go build wiki.go
     // ./wiki
-    http.HandleFunc("/view/", viewHandler)
-    http.HandleFunc("/edit/", editHandler)
-    http.HandleFunc("/save/", saveHandler)
+    http.HandleFunc("/view/", makeHandler(viewHandler))
+    http.HandleFunc("/edit/", makeHandler(editHandler))
+    http.HandleFunc("/save/", makeHandler(saveHandler))
 
     http.ListenAndServe(":8080", nil)
 }
