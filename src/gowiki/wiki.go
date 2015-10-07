@@ -1,3 +1,9 @@
+/* 
+Code for writing a basic wiki-pages web application.  This was done for 
+the educational experience and is not my own work. 
+Tutorial taken from: https://golang.org/doc/articles/wiki/
+*/
+
 package main
 
 import (
